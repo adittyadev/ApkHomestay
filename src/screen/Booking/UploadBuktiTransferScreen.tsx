@@ -12,6 +12,11 @@ import {
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { authFetch } from '../../utils/authFetch';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../../config/IpPublic';
+// react-native-blob-util provides a reliable native upload for Android/iOS
+// @ts-ignore
+import RNFetchBlob from 'react-native-blob-util';
 
 export default function UploadBuktiTransfer({ route, navigation }: any) {
   const { paymentId, metode, total } = route.params;
@@ -56,21 +61,56 @@ export default function UploadBuktiTransfer({ route, navigation }: any) {
 
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('bukti_transfer', image);
+      console.log('[uploadBukti] image', image);
+      // Use react-native-blob-util to upload the file natively.
+      // This handles content:// URIs on Android and avoids fetch multipart issues.
+      const token = await AsyncStorage.getItem('token');
+      const fullUrl = `${API_URL}/payments/${paymentId}/upload-bukti`;
 
-      const res = await authFetch(`/payments/${paymentId}/upload-bukti`, {
-        method: 'POST',
-        body: formData,
-      });
+      // Prepare multipart data array
+      const multipart = [
+        {
+          name: 'bukti_transfer',
+          filename: image.name || `bukti_${Date.now()}.jpg`,
+          type: image.type || 'image/jpeg',
+          // RNFetchBlob.wrap handles file:// and content:// URIs
+          data: RNFetchBlob.wrap(image.uri),
+        },
+      ];
 
-      const data = await res.json();
-      if (!res.ok) return Alert.alert(data.message || 'Upload gagal');
+      const res = await RNFetchBlob.fetch(
+        'POST',
+        fullUrl,
+        {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          // let native lib set Content-Type multipart boundary
+        },
+        multipart as any,
+      );
+
+      console.log('[uploadBukti] rnfetchblob info', res.info && res.info());
+
+      const status = res.info ? res.info().status : res.respInfo && res.respInfo.status;
+      let data: any = null;
+      try {
+        data = res.data ? JSON.parse(res.data) : null;
+      } catch (e) {
+        // ignore parse error
+      }
+
+      if (!status || status < 200 || status >= 300) {
+        const msg = (data && data.message) || `Upload gagal (status ${status})`;
+        return Alert.alert('Error', msg);
+      }
 
       Alert.alert('Sukses', 'Bukti pembayaran berhasil dikirim');
       navigation.navigate('BookingList');
-    } catch {
-      Alert.alert('Network error');
+    } catch (err: any) {
+      // show error details to help debugging
+      const errMsg = (err && err.message) || 'Network error';
+      console.error('Upload error', errMsg, err);
+      Alert.alert('Network error', errMsg as string);
     } finally {
       setLoading(false);
     }
