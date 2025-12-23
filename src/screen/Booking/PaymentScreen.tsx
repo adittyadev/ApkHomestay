@@ -3,13 +3,10 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Alert,
   StyleSheet,
-  Image,
   ScrollView,
-  Platform,
+  Alert,
 } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
 import { authFetch } from '../../utils/authFetch';
 
 const METHODS = ['transfer', 'dana', 'ovo', 'gopay'];
@@ -20,105 +17,60 @@ export default function PaymentScreen({ route, navigation }: any) {
   const total = booking.total_bayar;
 
   const [method, setMethod] = useState<string>('transfer');
-  const [image, setImage] = useState<{
-    uri: string;
-    name: string;
-    type: string;
-  } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const pickImage = () => {
-    launchImageLibrary(
-      {
-        mediaType: 'photo',
-        quality: 0.7,
-      },
-      response => {
-        if (response.didCancel) return;
-
-        if (response.errorCode) {
-          Alert.alert('Error', response.errorMessage || 'Gagal pilih gambar');
-          return;
-        }
-
-        if (response.assets && response.assets.length > 0) {
-          const asset = response.assets[0];
-
-          if (!asset.uri) {
-            Alert.alert('Error', 'URI gambar tidak ditemukan');
-            return;
-          }
-
-          setImage({
-            uri: asset.uri, // ⬅️ BIARKAN ASLI
-            name: asset.fileName || `bukti_${Date.now()}.jpg`,
-            type: asset.type || 'image/jpeg',
-          });
-        }
-      },
-    );
-  };
-
   const submitPayment = async () => {
-    if (!image) {
-      Alert.alert('Error', 'Upload bukti pembayaran');
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const formData = new FormData();
-      formData.append('booking_id', bookingId.toString());
-      formData.append('metode', method);
-      formData.append('jumlah', total.toString());
-      formData.append('bukti_transfer', {
-        uri: image.uri,
-        name: image.name,
-        type: image.type,
-      } as any);
-
-      console.log('UPLOAD DATA:', {
-        booking_id: bookingId,
-        metode: method,
-        jumlah: total,
-        file: image,
-      });
-
       const response = await authFetch('/payments', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          booking_id: bookingId,
+          metode: method,
+          jumlah: total,
+        }),
       });
 
-      const status = response.status;
-      const text = await response.text();
-
-      console.log('PAYMENT STATUS:', status);
-      console.log('PAYMENT RESPONSE:', text);
-
-      let data: any = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch {
-        data = { message: text };
-      }
+      const data = await response.json();
 
       if (!response.ok) {
-        Alert.alert(`Gagal (${status})`, data.message || 'Pembayaran gagal');
+        Alert.alert('Error', data.message || 'Gagal membuat pembayaran');
         return;
       }
 
-      Alert.alert('Sukses', 'Pembayaran berhasil dikirim', [
-        {
-          text: 'OK',
-          onPress: () => navigation.navigate('Booking'),
-        },
-      ]);
-    } catch (error: any) {
-      console.log('PAYMENT JS ERROR:', error);
-      Alert.alert('Error JS', error.message || 'Network request failed');
+      // 👉 PINDAH KE HALAMAN UPLOAD BUKTI
+      navigation.navigate('UploadBuktiTransfer', {
+        paymentId: data.data.id,
+        metode: method,
+        total,
+      });
+    } catch {
+      Alert.alert('Error', 'Network error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const renderPaymentInfo = () => {
+    switch (method) {
+      case 'transfer':
+        return (
+          <Text style={styles.infoText}>
+            Transfer ke rekening:
+            {'\n'}BCA 123456789
+            {'\n'}a.n Tangkayo
+          </Text>
+        );
+      case 'dana':
+        return <Text style={styles.infoText}>DANA: 0812-3456-7890</Text>;
+      case 'ovo':
+        return <Text style={styles.infoText}>OVO: 0812-3456-7890</Text>;
+      case 'gopay':
+        return <Text style={styles.infoText}>GoPay: 0812-3456-7890</Text>;
+      default:
+        return null;
     }
   };
 
@@ -127,9 +79,6 @@ export default function PaymentScreen({ route, navigation }: any) {
       <Text style={styles.title}>Pembayaran</Text>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Kamar</Text>
-        <Text style={styles.value}>{booking.room?.nama_kamar ?? '-'}</Text>
-
         <Text style={styles.label}>Total Bayar</Text>
         <Text style={styles.total}>Rp {total}</Text>
       </View>
@@ -149,21 +98,15 @@ export default function PaymentScreen({ route, navigation }: any) {
         ))}
       </View>
 
-      <TouchableOpacity style={styles.upload} onPress={pickImage}>
-        <Text>
-          {image ? 'Ganti Bukti Pembayaran' : 'Upload Bukti Pembayaran'}
-        </Text>
-      </TouchableOpacity>
-
-      {image && <Image source={{ uri: image.uri }} style={styles.preview} />}
+      <View style={styles.infoBox}>{renderPaymentInfo()}</View>
 
       <TouchableOpacity
         style={styles.button}
         onPress={submitPayment}
         disabled={loading}
       >
-        <Text style={{ color: '#fff', fontWeight: 'bold' }}>
-          {loading ? 'Mengirim...' : 'Kirim Pembayaran'}
+        <Text style={styles.buttonText}>
+          {loading ? 'Memproses...' : 'Lakukan Pembayaran'}
         </Text>
       </TouchableOpacity>
     </ScrollView>
@@ -172,71 +115,86 @@ export default function PaymentScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    backgroundColor: '#fff',
     flex: 1,
+    backgroundColor: '#F9FAFB',
+    padding: 16,
   },
+
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 15,
+    color: '#111827',
+    marginBottom: 16,
   },
+
   card: {
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    padding: 15,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 20,
+    elevation: 2,
   },
+
   label: {
-    marginTop: 10,
+    fontSize: 14,
     fontWeight: '600',
+    color: '#374151',
+    marginBottom: 6,
   },
-  value: {
-    fontSize: 16,
-    marginTop: 5,
-  },
+
   total: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginTop: 5,
+    color: '#16A34A',
   },
+
   methods: {
     flexDirection: 'row',
-    marginTop: 10,
     flexWrap: 'wrap',
+    marginBottom: 12,
   },
+
   methodBtn: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    padding: 10,
-    borderRadius: 6,
+    borderColor: '#D1D5DB',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
     marginRight: 10,
     marginBottom: 10,
+    backgroundColor: '#FFFFFF',
   },
+
   activeMethod: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
   },
-  upload: {
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    padding: 15,
-    borderRadius: 6,
-    marginTop: 20,
-    alignItems: 'center',
+
+  infoBox: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2563EB',
   },
-  preview: {
-    width: '100%',
-    height: 200,
-    marginTop: 15,
-    borderRadius: 8,
+
+  infoText: {
+    fontSize: 14,
+    color: '#1E40AF',
+    lineHeight: 20,
   },
+
   button: {
-    backgroundColor: '#16a34a',
-    padding: 15,
-    borderRadius: 8,
-    marginTop: 25,
+    backgroundColor: '#16A34A',
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: 'center',
+  },
+
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
