@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,15 +8,26 @@ import {
   StyleSheet,
   Dimensions,
   StatusBar,
+  TextInput,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { IP_PUBLIC } from '../../config/IpPublic';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
 export default function RoomDetailScreen({ route, navigation }: any) {
   const { room } = route.params;
 
+  /* ================= STATE ================= */
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  /* ================= FORMAT ================= */
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -45,18 +56,66 @@ export default function RoomDetailScreen({ route, navigation }: any) {
   const statusInfo = getStatusInfo(room.status);
   const isBooked = room.status.toLowerCase() === 'booked';
 
+  /* ================= API ================= */
+  const fetchReviews = async () => {
+    try {
+      const res = await fetch(`${IP_PUBLIC}/api/rooms/${room.id}/reviews`);
+      const data = await res.json();
+      setReviews(data);
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const submitReview = async () => {
+    if (!rating || !comment) {
+      Alert.alert('Validasi', 'Rating dan komentar wajib diisi');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const token = await AsyncStorage.getItem('token');
+
+      await fetch(`${IP_PUBLIC}/api/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          room_id: room.id,
+          rating,
+          comment,
+        }),
+      });
+
+      setRating(0);
+      setComment('');
+      fetchReviews();
+    } catch {
+      Alert.alert('Error', 'Gagal mengirim komentar');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReviews();
+  }, []);
+
+  /* ================= RENDER ================= */
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Image Section */}
+        {/* IMAGE */}
         <View style={styles.imageContainer}>
           {room.foto ? (
             <Image
               source={{ uri: `${IP_PUBLIC}/storage/${room.foto}` }}
               style={styles.image}
-              resizeMode="cover"
             />
           ) : (
             <View style={styles.placeholderImage}>
@@ -64,7 +123,6 @@ export default function RoomDetailScreen({ route, navigation }: any) {
             </View>
           )}
 
-          {/* Back Button */}
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
@@ -72,7 +130,6 @@ export default function RoomDetailScreen({ route, navigation }: any) {
             <Ionicons name="arrow-back" size={24} color="#1F2937" />
           </TouchableOpacity>
 
-          {/* Status Badge */}
           <View
             style={[
               styles.statusBadge,
@@ -90,105 +147,113 @@ export default function RoomDetailScreen({ route, navigation }: any) {
           </View>
         </View>
 
-        {/* Content Section */}
+        {/* CONTENT */}
         <View style={styles.contentContainer}>
-          {/* Room Name */}
-          <View style={styles.headerSection}>
-            <View style={styles.titleContainer}>
-              <Text style={styles.roomName}>{room.nama_kamar}</Text>
-              <View style={styles.ratingContainer}>
-                <Ionicons name="star" size={16} color="#F59E0B" />
-                <Text style={styles.ratingText}>4.8</Text>
-              </View>
-            </View>
-          </View>
+          <Text style={styles.roomName}>{room.nama_kamar}</Text>
 
-          {/* Info Cards */}
+          {/* INFO */}
           <View style={styles.infoCardsContainer}>
             <View style={styles.infoCard}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="people" size={20} color="#3B82F6" />
-              </View>
-              <Text style={styles.infoLabel}>Kapasitas</Text>
-              <Text style={styles.infoValue}>{room.kapasitas} Orang</Text>
+              <Ionicons name="people" size={20} color="#3B82F6" />
+              <Text>{room.kapasitas} Orang</Text>
             </View>
-
             <View style={styles.infoCard}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="bed" size={20} color="#10B981" />
-              </View>
-              <Text style={styles.infoLabel}>Tipe</Text>
-              <Text style={styles.infoValue}>Standar</Text>
+              <Ionicons name="bed" size={20} color="#10B981" />
+              <Text>Standar</Text>
             </View>
-
             <View style={styles.infoCard}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="resize" size={20} color="#F59E0B" />
-              </View>
-              <Text style={styles.infoLabel}>Ukuran</Text>
-              <Text style={styles.infoValue}>25 m²</Text>
+              <Ionicons name="resize" size={20} color="#F59E0B" />
+              <Text>25 m²</Text>
             </View>
           </View>
 
-          {/* Facilities */}
+          {/* KOMENTAR INPUT */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Fasilitas Kamar</Text>
-            <View style={styles.facilitiesContainer}>
-              <View style={styles.facilityItem}>
-                <Ionicons name="wifi" size={20} color="#6B7280" />
-                <Text style={styles.facilityText}>WiFi Gratis</Text>
-              </View>
-              <View style={styles.facilityItem}>
-                <Ionicons name="tv" size={20} color="#6B7280" />
-                <Text style={styles.facilityText}>TV LED</Text>
-              </View>
-              <View style={styles.facilityItem}>
-                <Ionicons name="snow" size={20} color="#6B7280" />
-                <Text style={styles.facilityText}>AC</Text>
-              </View>
-              <View style={styles.facilityItem}>
-                <Ionicons name="water" size={20} color="#6B7280" />
-                <Text style={styles.facilityText}>Kamar Mandi</Text>
-              </View>
-              <View style={styles.facilityItem}>
-                <Ionicons name="restaurant" size={20} color="#6B7280" />
-                <Text style={styles.facilityText}>Sarapan</Text>
-              </View>
-              <View style={styles.facilityItem}>
-                <Ionicons name="car" size={20} color="#6B7280" />
-                <Text style={styles.facilityText}>Parkir</Text>
-              </View>
+            <Text style={styles.sectionTitle}>Beri Ulasan</Text>
+
+            <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+              {[1, 2, 3, 4, 5].map(i => (
+                <TouchableOpacity key={i} onPress={() => setRating(i)}>
+                  <Ionicons
+                    name={i <= rating ? 'star' : 'star-outline'}
+                    size={28}
+                    color="#F59E0B"
+                  />
+                </TouchableOpacity>
+              ))}
             </View>
+
+            <TextInput
+              placeholder="Tulis komentar..."
+              style={styles.commentInput}
+              value={comment}
+              onChangeText={setComment}
+              multiline
+            />
+
+            <TouchableOpacity
+              style={styles.sendButton}
+              onPress={submitReview}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: '#fff', fontWeight: '600' }}>
+                  Kirim Komentar
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
 
-          {/* Description */}
+          {/* LIST KOMENTAR */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Deskripsi</Text>
-            <Text style={styles.description}>
-              Kamar yang nyaman dan bersih dengan fasilitas lengkap. Cocok untuk
-              liburan keluarga atau perjalanan bisnis. Lokasi strategis dengan
-              akses mudah ke berbagai tempat wisata dan pusat kota.
-            </Text>
+            <Text style={styles.sectionTitle}>Ulasan Pengunjung</Text>
+
+            {reviews.length === 0 && (
+              <Text style={{ color: '#6B7280' }}>Belum ada komentar</Text>
+            )}
+
+            {reviews.map(item => (
+              <View key={item.id} style={styles.reviewCard}>
+                <Text style={styles.reviewUser}>{item.user.name}</Text>
+
+                <View style={{ flexDirection: 'row' }}>
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <Ionicons
+                      key={i}
+                      name={i <= item.rating ? 'star' : 'star-outline'}
+                      size={16}
+                      color="#F59E0B"
+                    />
+                  ))}
+                </View>
+
+                <Text style={styles.reviewText}>{item.comment}</Text>
+
+                {item.replies.map((r: any) => (
+                  <View key={r.id} style={styles.replyBox}>
+                    <Text style={styles.replyUser}>{r.user.name}</Text>
+                    <Text>{r.reply}</Text>
+                  </View>
+                ))}
+              </View>
+            ))}
           </View>
 
-          {/* Spacer for bottom button */}
-          <View style={{ height: 100 }} />
+          <View style={{ height: 120 }} />
         </View>
       </ScrollView>
 
-      {/* Bottom Bar - Price & Booking Button */}
+      {/* BOTTOM BAR */}
       <View style={styles.bottomBar}>
-        <View style={styles.priceContainer}>
-          <Text style={styles.priceLabel}>Harga per Malam</Text>
-          <Text style={styles.price}>{formatPrice(room.harga)}</Text>
-        </View>
+        <Text style={styles.price}>{formatPrice(room.harga)}</Text>
         <TouchableOpacity
-          onPress={() => navigation.navigate('BookingForm', { room })}
-          style={[styles.bookButton, isBooked && styles.bookButtonDisabled]}
           disabled={isBooked}
+          style={[styles.bookButton, isBooked && styles.bookButtonDisabled]}
+          onPress={() => navigation.navigate('BookingForm', { room })}
         >
-          <Ionicons name="calendar" size={20} color="#fff" />
-          <Text style={styles.bookButtonText}>
+          <Text style={{ color: '#fff', fontWeight: '600' }}>
             {isBooked ? 'Tidak Tersedia' : 'Booking Sekarang'}
           </Text>
         </TouchableOpacity>
@@ -414,5 +479,55 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     marginLeft: 8,
+  },
+
+  /* ================= REVIEW ================= */
+  reviewCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    elevation: 2,
+  },
+  reviewUser: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  reviewText: {
+    marginTop: 6,
+    color: '#374151',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
+  replyBox: {
+    marginTop: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    padding: 10,
+    marginLeft: 12,
+  },
+  replyUser: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  commentInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    minHeight: 90,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+
+  sendButton: {
+    marginTop: 12,
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
   },
 });

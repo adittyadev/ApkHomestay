@@ -10,13 +10,18 @@ import {
   ScrollView,
   Alert,
   Platform,
+  PermissionsAndroid,
 } from 'react-native';
 import {
   launchCamera,
   launchImageLibrary,
   ImagePickerResponse,
 } from 'react-native-image-picker';
-import { getProfile, updateProfile } from '../../services/profileService';
+import { getProfile } from '../../services/profileService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../../config/IpPublic';
+// @ts-ignore
+import RNFetchBlob from 'react-native-blob-util';
 
 export default function EditProfileScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
@@ -52,6 +57,18 @@ export default function EditProfileScreen({ navigation }: any) {
     }
   };
 
+  const requestPermission = async () => {
+    if (Platform.OS !== 'android') return true;
+
+    const permission =
+      Platform.Version >= 33
+        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+
+    const granted = await PermissionsAndroid.request(permission);
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  };
+
   const showImagePicker = () => {
     Alert.alert(
       'Pilih Foto',
@@ -74,10 +91,15 @@ export default function EditProfileScreen({ navigation }: any) {
     );
   };
 
-  const openCamera = () => {
+  const openCamera = async () => {
+    const ok = await requestPermission();
+    if (!ok) return Alert.alert('Izin kamera ditolak');
+
     const options = {
       mediaType: 'photo' as const,
-      quality: 0.8 as const,
+      quality: 0.7 as const,
+      maxWidth: 1024,
+      maxHeight: 1024,
       saveToPhotos: true,
       cameraType: 'back' as const,
     };
@@ -85,10 +107,15 @@ export default function EditProfileScreen({ navigation }: any) {
     launchCamera(options, handleImageResponse);
   };
 
-  const openGallery = () => {
+  const openGallery = async () => {
+    const ok = await requestPermission();
+    if (!ok) return Alert.alert('Izin galeri ditolak');
+
     const options = {
       mediaType: 'photo' as const,
-      quality: 0.8 as const,
+      quality: 0.7 as const,
+      maxWidth: 1024,
+      maxHeight: 1024,
       selectionLimit: 1,
     };
 
@@ -109,9 +136,10 @@ export default function EditProfileScreen({ navigation }: any) {
 
     if (response.assets && response.assets.length > 0) {
       const asset = response.assets[0];
+
       setSelectedImage({
         uri: asset.uri,
-        type: asset.type,
+        type: asset.type || 'image/jpeg',
         name: asset.fileName || `photo_${Date.now()}.jpg`,
       });
     }
@@ -138,41 +166,85 @@ export default function EditProfileScreen({ navigation }: any) {
     setSaving(true);
 
     try {
-      const data = new FormData();
-      data.append('nama', formData.nama);
-      data.append('email', formData.email);
-      data.append('no_hp', formData.no_hp);
-      data.append('alamat', formData.alamat);
+      const token = await AsyncStorage.getItem('token');
+      const fullUrl = `${API_URL}/profile/update`;
 
+      console.log('[handleSubmit] Updating profile to:', fullUrl);
+
+      // Prepare multipart data array
+      const multipart: any[] = [
+        {
+          name: 'nama',
+          data: formData.nama,
+        },
+        {
+          name: 'email',
+          data: formData.email,
+        },
+        {
+          name: 'no_hp',
+          data: formData.no_hp,
+        },
+        {
+          name: 'alamat',
+          data: formData.alamat,
+        },
+      ];
+
+      // Add image if selected
       if (selectedImage) {
-        data.append('foto', {
-          uri:
-            Platform.OS === 'ios'
-              ? selectedImage.uri.replace('file://', '')
-              : selectedImage.uri,
+        console.log('[handleSubmit] Adding image:', selectedImage);
+        multipart.push({
+          name: 'foto',
+          filename: selectedImage.name || `photo_${Date.now()}.jpg`,
           type: selectedImage.type || 'image/jpeg',
-          name: selectedImage.name,
-        } as any);
+          data: RNFetchBlob.wrap(selectedImage.uri),
+        });
       }
 
-      const response = await updateProfile(data);
+      const res = await RNFetchBlob.fetch(
+        'POST',
+        fullUrl,
+        {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+        multipart,
+      );
 
-      if (response.success) {
-        Alert.alert('Sukses', 'Profile berhasil diupdate', [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]);
-      } else {
-        const errorMessage = response.errors
-          ? Object.values(response.errors).flat().join('\n')
-          : 'Gagal update profile';
-        Alert.alert('Error', errorMessage);
+      console.log('[handleSubmit] Response info:', res.info && res.info());
+
+      const status = res.info
+        ? res.info().status
+        : res.respInfo && res.respInfo.status;
+
+      let data: any = null;
+      try {
+        data = res.data ? JSON.parse(res.data) : null;
+      } catch (e) {
+        console.log('[handleSubmit] Failed to parse response');
       }
-    } catch (e: any) {
-      console.log(e);
-      Alert.alert('Error', e.message || 'Gagal update profile');
+
+      if (!status || status < 200 || status >= 300) {
+        const errorMessage =
+          (data && data.message) ||
+          (data && data.errors
+            ? Object.values(data.errors).flat().join('\n')
+            : null) ||
+          `Update gagal (status ${status})`;
+        return Alert.alert('Error', errorMessage);
+      }
+
+      Alert.alert('Sukses', 'Profile berhasil diupdate', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
+    } catch (err: any) {
+      const errMsg = (err && err.message) || 'Network error';
+      console.error('[handleSubmit] Error:', errMsg, err);
+      Alert.alert('Error', errMsg);
     } finally {
       setSaving(false);
     }
@@ -206,6 +278,12 @@ export default function EditProfileScreen({ navigation }: any) {
             <Text style={styles.editText}>📷 Edit</Text>
           </View>
         </TouchableOpacity>
+
+        {selectedImage && (
+          <Text style={styles.imageInfo}>
+            Foto dipilih: {selectedImage.name}
+          </Text>
+        )}
 
         <View style={styles.form}>
           <Text style={styles.label}>Nama Lengkap</Text>
@@ -331,6 +409,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  imageInfo: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 16,
+    textAlign: 'center',
   },
   form: {
     width: '100%',

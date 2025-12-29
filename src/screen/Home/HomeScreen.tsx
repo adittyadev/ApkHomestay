@@ -14,6 +14,7 @@ import { authFetch } from '../../utils/authFetch';
 import { IP_PUBLIC } from '../../config/IpPublic';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { AuthContext } from '../../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 
 type Room = {
   id: number;
@@ -30,11 +31,24 @@ export default function HomeScreen({ navigation }: any) {
   const [filteredRooms, setFilteredRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0); // ✅ State untuk unread count
 
   // Load rooms saat pertama kali
   useEffect(() => {
     getRooms();
+    loadUnreadCount(); // ✅ Load unread count
+
+    // ✅ Poll unread count setiap 30 detik
+    const interval = setInterval(loadUnreadCount, 5000);
+    return () => clearInterval(interval);
   }, []);
+
+  // ✅ Refresh unread count saat screen focused
+  useFocusEffect(
+    React.useCallback(() => {
+      loadUnreadCount();
+    }, []),
+  );
 
   // Filter rooms saat search query atau rooms berubah
   useEffect(() => {
@@ -51,17 +65,27 @@ export default function HomeScreen({ navigation }: any) {
   const getRooms = async () => {
     try {
       const response = await authFetch('/rooms');
-      console.log('STATUS:', response.status);
-
       const data = await response.json();
-      console.log('ROOM RESPONSE:', data);
-
       setRooms(data);
       setFilteredRooms(data);
     } catch (error) {
       console.log('ERROR GET ROOMS:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ Function untuk load unread count
+  const loadUnreadCount = async () => {
+    try {
+      const res = await authFetch('/notifications/unread-count');
+      const json = await res.json();
+
+      if (res.ok) {
+        setUnreadCount(json.unread_count || 0);
+      }
+    } catch (error) {
+      console.log('Error loading unread count:', error);
     }
   };
 
@@ -198,7 +222,7 @@ export default function HomeScreen({ navigation }: any) {
     </View>
   );
 
-  // Loading state - HARUS di paling atas setelah semua hooks
+  // Loading state
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -216,13 +240,24 @@ export default function HomeScreen({ navigation }: any) {
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>
-            Selamat Datang, {user?.name || 'Pengguna'}! 👋
+            Selamat Datang, {user?.name || 'Pengguna'}!
           </Text>
           <Text style={styles.subtitle}>Temukan kamar terbaik untuk Anda</Text>
         </View>
-        <TouchableOpacity style={styles.notificationButton}>
+
+        {/* ✅ Notification Button dengan Badge */}
+        <TouchableOpacity
+          style={styles.notificationButton}
+          onPress={() => navigation.navigate('Notification')}
+        >
           <Ionicons name="notifications-outline" size={24} color="#1F2937" />
-          <View style={styles.badge} />
+          {unreadCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -324,14 +359,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     position: 'relative',
   },
-  badge: {
+  // ✅ Update style badge menjadi notificationBadge
+  notificationBadge: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 8,
+    right: 8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#F3F4F6',
+  },
+  notificationBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   searchContainer: {
     paddingHorizontal: 16,
