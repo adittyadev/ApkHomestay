@@ -13,10 +13,11 @@ import { getProfile, logout as apiLogout } from '../../services/profileService';
 import { AuthContext } from '../../context/AuthContext';
 
 export default function ProfileScreen({ navigation }: any) {
-  const { logout } = useContext(AuthContext); // ← Ambil logout dari context
+  const { logout } = useContext(AuthContext);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [imageKey, setImageKey] = useState(Date.now()); // Force image refresh
 
   useFocusEffect(
     React.useCallback(() => {
@@ -29,6 +30,9 @@ export default function ProfileScreen({ navigation }: any) {
       setLoading(true);
       const res = await getProfile();
       setProfile(res.data);
+      // Update image key to force refresh
+      setImageKey(Date.now());
+      console.log('[ProfileScreen] Profile loaded:', res.data);
     } catch (e: any) {
       console.error('Error loading profile:', e);
       Alert.alert('Error', e.message || 'Gagal memuat profile');
@@ -52,15 +56,10 @@ export default function ProfileScreen({ navigation }: any) {
     setLoggingOut(true);
 
     try {
-      // Panggil API logout (hapus token di backend)
       await apiLogout();
-
-      // Logout dari context (hapus token lokal & auto redirect ke Login)
       await logout();
     } catch (e: any) {
       console.error('Logout error:', e);
-
-      // Tetap logout dari context meskipun API gagal
       try {
         await logout();
       } catch (logoutError) {
@@ -80,13 +79,19 @@ export default function ProfileScreen({ navigation }: any) {
     );
   }
 
+  // Construct image URL with cache busting
+  const avatarUri = profile?.tamu?.foto
+    ? `${profile.tamu.foto}?t=${imageKey}`
+    : 'https://via.placeholder.com/150';
+
+  console.log('[ProfileScreen] Avatar URI:', avatarUri);
+
   return (
     <View style={styles.container}>
       <Image
-        source={{
-          uri: profile?.tamu?.foto ?? 'https://via.placeholder.com/150',
-        }}
+        source={{ uri: avatarUri }}
         style={styles.avatar}
+        key={imageKey} // Force re-render when key changes
       />
 
       <Text style={styles.name}>{profile?.tamu?.nama ?? 'Nama Pengguna'}</Text>

@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import BookingListScreen from '../screen/Booking/BookingListScreen';
 import PaymentScreen from '../screen/Booking/PaymentScreen';
 import UploadBuktiTransfer from '../screen/Booking/UploadBuktiTransferScreen';
+import BookingDetailScreen from '../screen/Booking/BookingDetailScreen';
 
 export type BookingStackParamList = {
   BookingList: undefined;
@@ -13,6 +14,9 @@ export type BookingStackParamList = {
     paymentId: number;
     metode: string;
     total: number;
+  };
+  BookingDetail: {
+    bookingId: number;
   };
 };
 
@@ -47,6 +51,14 @@ export default function BookingStack() {
         component={UploadBuktiTransfer}
         options={{
           title: 'Upload Bukti Pembayaran',
+        }}
+      />
+
+      <Stack.Screen
+        name="BookingDetail"
+        component={BookingDetailScreen}
+        options={{
+          title: 'Detail Booking', // Ubah title yang lebih sesuai
         }}
       />
     </Stack.Navigator>

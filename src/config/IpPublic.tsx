@@ -1,2 +1,2 @@
-export const API_URL = `https://dina-unmelodised-ferociously.ngrok-free.dev/api`;
-export const IP_PUBLIC = `https://dina-unmelodised-ferociously.ngrok-free.dev`;
+export const API_URL = `http://10.174.225.203:8000/api`;
+export const IP_PUBLIC = `http://10.174.225.203:8000`;
