@@ -31,23 +31,28 @@ export default function HomeScreen({ navigation }: any) {
   const [filteredRooms, setFilteredRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [unreadCount, setUnreadCount] = useState(0); // ✅ State untuk unread count
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false); // ✅ State untuk unread count
 
   // Load rooms saat pertama kali
   useEffect(() => {
     getRooms();
-    loadUnreadCount(); // ✅ Load unread count
+    loadUnreadCount();
 
-    // ✅ Poll unread count setiap 30 detik
-    const interval = setInterval(loadUnreadCount, 5000);
+    const interval = setInterval(() => {
+      refreshRooms(); // 🔥 refresh room status
+      loadUnreadCount(); // notif tetap update
+    }, 5000); // tiap 5 detik
+
     return () => clearInterval(interval);
   }, []);
 
   // ✅ Refresh unread count saat screen focused
   useFocusEffect(
     React.useCallback(() => {
+      refreshRooms(); // 🔥 update status saat balik ke Home
       loadUnreadCount();
-    }, []),
+    }, [searchQuery]),
   );
 
   // Filter rooms saat search query atau rooms berubah
@@ -72,6 +77,23 @@ export default function HomeScreen({ navigation }: any) {
       console.log('ERROR GET ROOMS:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const refreshRooms = async () => {
+    try {
+      const response = await authFetch('/rooms');
+      const data = await response.json();
+
+      setRooms(data);
+      setFilteredRooms(prev => {
+        if (searchQuery.trim() === '') return data;
+        return data.filter(room =>
+          room.nama_kamar.toLowerCase().includes(searchQuery.toLowerCase()),
+        );
+      });
+    } catch (error) {
+      console.log('ERROR REFRESH ROOMS:', error);
     }
   };
 
